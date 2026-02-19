@@ -1,0 +1,33 @@
+# LineApp
+
+La web app "LineApp" serve per monitorare e comunicare in modo chiaro l'afflusso di persone agli eventi, migliorando la sicurezza e la consapevolezza del pubblico.
+
+
+## 🚀 Demo Live
+
+[Guarda il progetto su StackBlitz](https://stackblitz.com/~/github.com/asiasuppa/LineApp)
+[Guarda il progetto su Vercel](https://lineapp-pink.vercel.app/)
+## 🛠 Tecnologie Utilizzate
+
+- HTML5
+- CSS3
+- JavaScript
+
+## ✨ Funzionalità
+
+- Monitoraggio in tempo reale del numero di persone entrate
+- Visualizzazione delle persone in coda
+- Stima delle tempistiche di attesa
+- Alert per situazioni di overcrowding
+- Interfaccia intuitiva e user-friendly
+- Design responsivo per dispositivi mobili
+
+## 💻 Utilizzo in Locale
+
+Essendo un sito in HTML statico, è semplicissimo da eseguire:
+1. Scarica o clona questo repository.
+2. Apri il file `index.html` nel tuo browser preferito.
+
+## 👨‍💻 Autore
+
+- GitHub: [@asiasuppa](https://github.com/asiasuppa)
