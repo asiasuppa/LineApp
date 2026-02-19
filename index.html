@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LineApp - CrowdMonitoring</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:wght@400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    
+    <!-- Tailwind Config for Custom Colors -->
+    <style type="text/tailwindcss">
+        @theme {
+          --color-pastel-green: #eaf4ec;
+          --color-area-green: #cfe8d8;
+          --color-area-gold: #e8e4cf;
+          --color-alert-red: #d64545;
+          --color-vip-gold: #d4af37;
+          --color-outline-gray: #4a4a4a;
+          --color-stage-gray: #222222;
+          --color-turnstile-dark: #222222;
+          --color-text-accent: #2b2b2b;
+          --font-playfair: 'Playfair Display', serif;
+          --font-lato: 'Lato', sans-serif;
+        }
+        
+        body {
+            background-color: var(--color-pastel-green);
+            color: var(--color-text-accent);
+            font-family: var(--font-lato);
+            overflow: hidden; /* App shell is fixed */
+        }
+
+        /* Search Dropdown */
+        .search-results {
+            max-height: 200px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+        .search-results::-webkit-scrollbar {
+            width: 4px;
+        }
+        .search-results::-webkit-scrollbar-thumb {
+            background-color: #ccc;
+            border-radius: 4px;
+        }
+
+        h1, h2, h3 {
+            font-family: var(--font-playfair);
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 1s ease-in-out forwards;
+        }
+        
+        .fade-out {
+            animation: fadeOut 1s ease-in-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        /* Canvas container */
+        #venue-canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 4px;
+        }
+
+        /* Utility for Overlays */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border-top: 1px solid rgba(0,0,0,0.1);
+            box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        .glass-panel-floating {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(0,0,0,0.05);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Admin Controls Transition */
+        .admin-panel-enter {
+            transform: translateY(100%);
+            transition: transform 0.3s ease-out;
+        }
+        .admin-panel-enter.active {
+            transform: translateY(0);
+        }
+
+        /* Overcrowding Glow */
+        .alert-glow {
+            box-shadow: 0 0 15px rgba(214, 69, 69, 0.6);
+            animation: borderPulse 2s infinite;
+        }
+        
+        @keyframes borderPulse {
+            0% { border-color: rgba(214, 69, 69, 0.4); }
+            50% { border-color: rgba(214, 69, 69, 1); }
+            100% { border-color: rgba(214, 69, 69, 0.4); }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col relative">
+
+    <!-- INTRO OVERLAY -->
+    <div id="intro-overlay" class="absolute inset-0 z-50 bg-pastel-green flex flex-col items-center justify-center text-center p-6 pointer-events-none">
+        <h1 id="intro-text" class="text-4xl md:text-6xl font-bold text-text-accent opacity-0 transform translate-y-4 transition-all duration-1000">
+            LineApp<br>
+            <span class="text-xl md:text-3xl font-light mt-2 block text-gray-600 font-lato tracking-widest uppercase">
+                CrowdMonitoring
+            </span>
+        </h1>
+    </div>
+
+    <!-- MAIN APP STRUCTURE -->
+    
+    <!-- Navbar -->
+    <nav class="flex justify-between items-center p-4 md:px-6 border-b border-gray-200 bg-white/50 backdrop-blur-sm z-40 h-16 shrink-0 relative">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 bg-area-green border-2 border-outline-gray rounded-sm flex items-center justify-center">
+                <div class="w-2 h-2 bg-alert-red rounded-full"></div>
+            </div>
+            <span class="text-xl md:text-2xl font-bold font-playfair tracking-tight">LineApp</span>
+        </div>
+
+        <!-- Role Selector / Admin Access -->
+        <div class="flex items-center gap-4">
+            <div class="relative group">
+                <button id="role-btn" class="flex items-center gap-2 text-sm font-bold uppercase tracking-wide hover:opacity-70 transition">
+                    <span id="current-role-label" class="hidden md:inline">Utente (View)</span>
+                    <span class="md:hidden">Role</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+                
+                <!-- Dropdown -->
+                <div class="absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-lg rounded-md hidden group-hover:block overflow-hidden z-50">
+                    <button onclick="app.setRole('user')" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm">Utente</button>
+                    <button onclick="app.promptAdmin()" class="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm border-t border-gray-100 font-bold text-text-accent">Admin Area</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area (Scrollable) -->
+    <main class="flex-1 flex flex-col relative overflow-y-auto pb-48">
+        
+        <!-- Search & Status Bar -->
+        <div class="absolute top-4 left-0 right-0 px-4 md:px-8 z-30 flex flex-col md:flex-row gap-4 justify-between items-start pointer-events-none">
+            
+            <!-- Search Widget -->
+            <div class="glass-panel-floating p-3 rounded-lg pointer-events-auto w-full md:w-80 shadow-sm transition-opacity duration-1000 opacity-0 relative" id="ui-search">
+                <div class="relative">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 absolute left-3 top-2.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input type="text" id="search-input" value="Ippodromo SNAI San Siro" autocomplete="off" class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm font-lato focus:outline-none focus:ring-1 focus:ring-outline-gray" placeholder="Cerca evento...">
+                </div>
+                
+                <!-- Dropdown Results -->
+                <ul id="search-results" class="search-results absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg hidden z-50 divide-y divide-gray-100">
+                    <!-- JS populates this -->
+                </ul>
+
+                <div class="mt-2 flex justify-between text-xs text-gray-500 font-bold">
+                    <span>Cap: <span id="venue-cap-display">35.000</span></span>
+                    <span id="venue-type-display">Outdoor</span>
+                </div>
+            </div>
+
+            <!-- Live Status Badge (Hidden initially) -->
+            <div id="status-badge" class="glass-panel-floating px-4 py-2 rounded-full flex items-center gap-2 shadow-sm transform translate-y-[-20px] opacity-0 transition-all duration-500 pointer-events-auto">
+                <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
+                <span class="font-bold text-sm tracking-wide text-green-800" id="status-text">AFFLUSSO REGOLARE</span>
+            </div>
+        </div>
+
+        <!-- Disclaimer Text (Above Map) -->
+        <div class="w-full text-center mt-20 md:mt-4 mb-2 z-10 relative pointer-events-none">
+             <span class="text-[10px] md:text-xs italic text-gray-500 bg-white/50 px-2 py-1 rounded">Allestimento degli spazi simulato</span>
+        </div>
+
+        <!-- Canvas Area (Map) -->
+        <!-- Min height ensures scrollability on small screens -->
+        <div class="relative w-full min-h-[600px] flex items-center justify-center bg-pastel-green">
+            <canvas id="venue-canvas"></canvas>
+        </div>
+
+    </main>
+
+    <!-- Bottom Stats Panel & Legend (Fixed) -->
+    <div class="fixed bottom-0 left-0 right-0 glass-panel p-2 md:p-4 z-40 transition-transform duration-500 transform translate-y-full" id="stats-panel">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between gap-4">
+            
+            <!-- DATA METRICS -->
+            <div class="flex-1 flex gap-4 md:gap-8 justify-between md:justify-start">
+                <!-- Queue -->
+                <div class="flex-1 md:flex-none min-w-[100px]">
+                    <div class="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">Coda Esterna</div>
+                    <div class="text-2xl md:text-3xl font-bold font-lato text-alert-red" id="stat-queue">0</div>
+                    <div class="text-[10px] text-gray-600 flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        ~<span id="wait-time">0</span> min
+                    </div>
+                </div>
+                
+                <div class="w-px bg-gray-300 h-10 md:h-12 self-center hidden md:block"></div>
+                
+                <!-- Standard Inside -->
+                <div class="flex-1 md:flex-none min-w-[100px]">
+                    <div class="text-[10px] md:text-xs text-gray-500 uppercase tracking-wider mb-1">Parterre (Std)</div>
+                    <div class="text-2xl md:text-3xl font-bold font-lato text-text-accent" id="stat-inside-std">0</div>
+                    <div class="text-[10px] text-gray-400">Cap. Tot: <span id="capacity-display">250</span></div>
+                </div>
+
+                <div class="w-px bg-gray-300 h-10 md:h-12 self-center hidden md:block"></div>
+
+                 <!-- Gold Circle Inside -->
+                <div class="flex-1 md:flex-none min-w-[100px]">
+                    <div class="text-[10px] md:text-xs text-vip-gold uppercase tracking-wider mb-1 font-bold">Golden Circle</div>
+                    <div class="text-2xl md:text-3xl font-bold font-lato text-vip-gold" id="stat-inside-gold">0</div>
+                    <div class="text-[10px] text-gray-400">Area VIP</div>
+                </div>
+            </div>
+
+            <!-- LEGEND & INFO -->
+            <div class="flex flex-col md:items-end justify-center border-t md:border-t-0 border-gray-200 pt-2 md:pt-0">
+                
+                <!-- Visual Legend -->
+                <div class="flex gap-4 mb-2 text-xs font-bold text-gray-600">
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-2.5 h-2.5 rounded-full bg-alert-red"></div>
+                        <span>Standard</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-2.5 h-2.5 rounded-full bg-vip-gold"></div>
+                        <span>Gold</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <div class="w-3 h-1.5 bg-green-500"></div>
+                        <span>Uscite</span>
+                    </div>
+                </div>
+
+                <div class="text-[10px] text-gray-400 font-mono flex gap-2 md:justify-end">
+                    <span>Aggiornato: <span id="last-update" class="text-gray-600 font-bold">--:--:--</span></span>
+                    <span class="hidden md:inline">|</span>
+                    <span class="font-playfair italic">Prototype v1.7</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADMIN CONTROL PANEL (Overlay) -->
+    <div id="admin-panel" class="fixed bottom-36 right-4 md:right-8 bg-white border-2 border-text-accent shadow-2xl rounded-lg p-4 w-72 z-50 transform translate-y-[150%] transition-transform duration-300 hidden">
+        <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 class="font-bold text-lg font-playfair">Admin Control</h3>
+            <button onclick="app.closeAdmin()" class="text-gray-400 hover:text-black">&times;</button>
+        </div>
+        
+        <div class="space-y-4">
+            <!-- Queue Section -->
+            <div>
+                <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Queue Management</label>
+                <div class="flex gap-2 items-center">
+                    <input type="number" id="admin-queue-input" min="0" 
+                           class="w-20 border border-gray-300 rounded px-2 py-1 text-center font-mono font-bold"
+                           onchange="app.updateFromInput('queue', this.value)">
+                    <button onclick="app.adjustCount('queue', 10)" 
+                            class="px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded text-sm font-bold border border-gray-300 touch-manipulation">+10</button>
+                    <button onclick="app.adjustCount('queue', 100)" 
+                            class="px-2 py-1 bg-gray-50 hover:bg-gray-100 rounded text-xs border border-gray-200 touch-manipulation">+100</button>
+                </div>
+            </div>
+
+            <!-- Inside Standard Section -->
+            <div>
+                <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Parterre (Standard)</label>
+                <div class="flex gap-2 items-center">
+                    <input type="number" id="admin-inside-std-input" min="0" 
+                           class="w-20 border border-gray-300 rounded px-2 py-1 text-center font-mono font-bold"
+                           onchange="app.updateFromInput('std', this.value)">
+                    <button onclick="app.adjustCount('std', 10)" 
+                            class="px-3 py-1 bg-green-50 hover:bg-green-100 text-green-800 rounded text-sm font-bold border border-green-200 touch-manipulation">+10</button>
+                </div>
+            </div>
+
+             <!-- Inside Gold Section -->
+             <div>
+                <label class="block text-xs font-bold uppercase text-vip-gold mb-1">Golden Circle (VIP)</label>
+                <div class="flex gap-2 items-center">
+                    <input type="number" id="admin-inside-gold-input" min="0" 
+                           class="w-20 border border-yellow-300 bg-yellow-50 rounded px-2 py-1 text-center font-mono font-bold text-yellow-800"
+                           onchange="app.updateFromInput('gold', this.value)">
+                    <button onclick="app.adjustCount('gold', 10)" 
+                            class="px-3 py-1 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded text-sm font-bold border border-yellow-300 touch-manipulation">+10</button>
+                </div>
+            </div>
+
+            <div class="pt-3 border-t mt-2 flex gap-2">
+                 <button onclick="app.toggleAutoEntry()" id="btn-auto-entry" class="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-800 py-1 rounded text-sm font-bold border border-blue-200 touch-manipulation">Auto Flow</button>
+                 <button onclick="app.resetDemo()" class="text-xs text-red-500 hover:underline px-2 touch-manipulation">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADMIN LOGIN MODAL -->
+    <dialog id="admin-dialog" class="p-6 rounded-lg shadow-2xl border-none backdrop:bg-black/50">
+        <form method="dialog" class="flex flex-col gap-4 w-64">
+            <h3 class="font-bold text-lg font-playfair">Admin Access</h3>
+            <input type="password" id="admin-pass" placeholder="Enter Code (000)" class="border border-gray-300 rounded p-2 text-center text-xl tracking-widest font-mono">
+            <div class="flex gap-2">
+                <button value="cancel" class="flex-1 py-2 text-gray-500 hover:bg-gray-100 rounded">Cancel</button>
+                <button id="admin-confirm-btn" value="confirm" class="flex-1 py-2 bg-text-accent text-white rounded font-bold">Login</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        /**
+         * LINEAPP CORE LOGIC
+         * Backend-less architecture using plain JS and Canvas
+         */
+
+        const CONFIG = {
+            colors: {
+                bg: '#eaf4ec',
+                area: '#cfe8d8',
+                areaGold: '#e8e4cf',
+                person: '#d64545',
+                personGold: '#d4af37',
+                outline: '#4a4a4a',
+                turnstile: '#222222',
+                stage: '#222222'
+            },
+            visualLimit: 2000, 
+            turnstileCount: 4,
+            personRadius: 1.5,
+            queueSpeed: 1.5,
+            insideSpeed: 0.4 
+        };
+
+        const VENUES = [
+            { name: "Ippodromo SNAI San Siro", city: "Milano", capacity: 35000, type: "Outdoor" },
+            { name: "Stadio San Siro", city: "Milano", capacity: 75817, type: "Stadium" },
+            { name: "Arena di Verona", city: "Verona", capacity: 15000, type: "Arena" },
+            { name: "Unipol Arena", city: "Bologna", capacity: 11000, type: "Indoor" },
+            { name: "Stadio Olimpico", city: "Roma", capacity: 72698, type: "Stadium" },
+            { name: "Campovolo RCF Arena", city: "Reggio Emilia", capacity: 103000, type: "Outdoor" },
+            { name: "Wembley Stadium", city: "Londra", capacity: 90000, type: "Stadium" },
+            { name: "Madison Square Garden", city: "New York", capacity: 19500, type: "Indoor" },
+            { name: "Allianz Stadium", city: "Torino", capacity: 41507, type: "Stadium" },
+            { name: "Mediolanum Forum", city: "Milano", capacity: 12700, type: "Indoor" }
+        ];
+
+        class Person {
+            constructor(type, tier = 'std') {
+                this.id = Math.random().toString(36).substr(2, 9);
+                this.type = type; // 'queue' or 'inside'
+                this.tier = tier; // 'std' or 'gold'
+                this.x = 0;
+                this.y = 0;
+                this.vx = 0;
+                this.vy = 0;
+                this.targetX = null;
+                this.targetY = null;
+                this.state = type === 'queue' ? 'waiting' : 'wandering'; 
+                this.laneIndex = -1; 
+            }
+
+            update(bounds, turnstiles, layout) {
+                const speed = (this.state === 'wandering') ? CONFIG.insideSpeed : CONFIG.queueSpeed;
+
+                if (this.state === 'waiting') {
+                    const dx = this.targetX - this.x;
+                    const dy = this.targetY - this.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    
+                    if (dist > 2) {
+                        this.x += (dx / dist) * speed;
+                        this.y += (dy / dist) * speed;
+                    }
+                } 
+                else if (this.state === 'entering') {
+                    const t = turnstiles[this.laneIndex];
+                    const dx = t.x - this.x;
+                    const dy = t.y - this.y;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+
+                    if (dist < 5) {
+                        this.state = 'wandering';
+                        this.type = 'inside';
+                        this.y -= 25; // Push past turnstile
+                    } else {
+                        this.x += (dx / dist) * (speed * 1.5);
+                        this.y += (dy / dist) * (speed * 1.5);
+                    }
+                }
+                else if (this.state === 'wandering') {
+                    if (Math.random() < 0.05) {
+                        this.vx = (Math.random() - 0.5) * speed;
+                        this.vy = (Math.random() - 0.5) * speed;
+                    }
+
+                    let nextX = this.x + this.vx;
+                    let nextY = this.y + this.vy;
+
+                    // 1. Stage Collision (Strict NO WALK)
+                    if(layout.stage) {
+                        const s = layout.stage;
+                        if (nextX >= s.x && nextX <= s.x + s.w && nextY >= s.y && nextY <= s.y + s.h) {
+                             this.vx *= -1; this.vy *= -1;
+                             return; 
+                        }
+                    }
+
+                    // 2. Golden Circle Logic
+                    if (this.tier === 'gold') {
+                        if (layout.goldCircle && !this.checkCollision(nextX, nextY, layout.goldCircle)) {
+                            this.vx *= -1; this.vy *= -1; 
+                            return;
+                        }
+                    } else {
+                        if (layout.goldCircle && this.checkCollision(nextX, nextY, layout.goldCircle)) {
+                            this.vx *= -1; this.vy *= -1; 
+                            return;
+                        }
+                    }
+
+                    // 3. Map Bounds
+                    if (nextX < bounds.x + CONFIG.personRadius) nextX = bounds.x + CONFIG.personRadius;
+                    if (nextX > bounds.x + bounds.w - CONFIG.personRadius) nextX = bounds.x + bounds.w - CONFIG.personRadius;
+                    if (nextY < bounds.y + CONFIG.personRadius) nextY = bounds.y + CONFIG.personRadius;
+                    if (nextY > bounds.y + bounds.h - CONFIG.personRadius) nextY = bounds.y + bounds.h - CONFIG.personRadius;
+
+                    this.x = nextX;
+                    this.y = nextY;
+                }
+            }
+
+            checkCollision(x, y, rect) {
+                return (x >= rect.x && x <= rect.x + rect.w &&
+                        y >= rect.y && y <= rect.y + rect.h);
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, CONFIG.personRadius, 0, Math.PI * 2);
+                ctx.fillStyle = (this.tier === 'gold') ? CONFIG.colors.personGold : CONFIG.colors.person;
+                ctx.fill();
+            }
+        }
+
+        const app = {
+            data: {
+                queueCount: 0,
+                insideStdCount: 0,
+                insideGoldCount: 0,
+                isAdmin: false,
+                capacity: 35000 
+            },
+            elements: {},
+            canvas: null,
+            ctx: null,
+            people: [],
+            mapBounds: { x: 0, y: 0, w: 0, h: 0 },
+            venueLayout: { props: [], exits: [], stage: {}, goldCircle: {} },
+            turnstiles: [],
+            animationFrame: null,
+            autoEntryInterval: null,
+
+            init() {
+                this.loadState();
+                this.elements = {
+                    introOverlay: document.getElementById('intro-overlay'),
+                    introText: document.getElementById('intro-text'),
+                    statsPanel: document.getElementById('stats-panel'),
+                    uiSearch: document.getElementById('ui-search'),
+                    searchInput: document.getElementById('search-input'),
+                    searchResults: document.getElementById('search-results'),
+                    venueCapDisplay: document.getElementById('venue-cap-display'),
+                    venueTypeDisplay: document.getElementById('venue-type-display'),
+                    statusBadge: document.getElementById('status-badge'),
+                    statQueue: document.getElementById('stat-queue'),
+                    statInsideStd: document.getElementById('stat-inside-std'),
+                    statInsideGold: document.getElementById('stat-inside-gold'),
+                    waitTime: document.getElementById('wait-time'),
+                    lastUpdate: document.getElementById('last-update'),
+                    adminPanel: document.getElementById('admin-panel'),
+                    adminDialog: document.getElementById('admin-dialog'),
+                    roleBtn: document.getElementById('role-btn'),
+                    currentRoleLabel: document.getElementById('current-role-label'),
+                    capacityDisplay: document.getElementById('capacity-display'),
+                    adminQueueInput: document.getElementById('admin-queue-input'),
+                    adminInsideStdInput: document.getElementById('admin-inside-std-input'),
+                    adminInsideGoldInput: document.getElementById('admin-inside-gold-input')
+                };
+
+                this.setupSearch();
+
+                this.canvas = document.getElementById('venue-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.resizeCanvas();
+                window.addEventListener('resize', () => this.resizeCanvas());
+
+                document.getElementById('admin-confirm-btn').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const pass = document.getElementById('admin-pass').value;
+                    if (pass === '000') {
+                        this.setRole('admin');
+                        this.elements.adminDialog.close();
+                        this.openAdminPanel();
+                    } else {
+                        alert('Codice Errato');
+                    }
+                });
+
+                this.playIntro();
+                this.loop();
+                setInterval(() => this.updateTime(), 1000);
+            },
+
+            resizeCanvas() {
+                this.canvas.width = this.canvas.parentElement.clientWidth;
+                this.canvas.height = this.canvas.parentElement.clientHeight;
+                
+                // Allow scrolling past by setting fixed visual height for the "Map Zone"
+                // but use dynamic width
+                const w = Math.min(600, this.canvas.width * 0.7); 
+                const h = Math.min(300, this.canvas.height * 0.45);
+                
+                const x = (this.canvas.width - w) / 2;
+                const y = (this.canvas.height - h) / 2 - 20; 
+
+                this.mapBounds = { x, y, w, h };
+                
+                this.turnstiles = [];
+                const spacing = w / (CONFIG.turnstileCount + 1);
+                for(let i=1; i<=CONFIG.turnstileCount; i++) {
+                    this.turnstiles.push({
+                        x: x + (spacing * i),
+                        y: y + h,
+                        w: 24,
+                        active: false,
+                        isGold: (i === 1) 
+                    });
+                }
+                
+                this.generateLayout();
+                if(this.people.length > 0) this.recalculateQueuePositions();
+            },
+
+            generateLayout() {
+                const { x, y, w, h } = this.mapBounds;
+                
+                // Stage
+                this.venueLayout.stage = {
+                    x: x + w/2 - 50,
+                    y: y + 10,
+                    w: 100,
+                    h: 40
+                };
+
+                // Golden Circle
+                this.venueLayout.goldCircle = {
+                    x: x + 20,
+                    y: y + 10,
+                    w: w - 40,
+                    h: 100
+                };
+
+                // Kiosks - Specific and Min 2
+                this.venueLayout.props = [];
+                const requiredProps = [
+                    { label: 'BAR', color: '#e6ccb2', text: '#5d4037' },
+                    { label: 'BAR', color: '#e6ccb2', text: '#5d4037' },
+                    { label: 'WC',  color: '#aed9e0', text: '#005f73' },
+                    { label: 'WC',  color: '#aed9e0', text: '#005f73' },
+                    { label: 'SOS', color: '#ffb3b3', text: '#a4161a' },
+                    { label: 'SOS', color: '#ffb3b3', text: '#a4161a' }
+                ];
+                
+                requiredProps.forEach(prop => {
+                     // Try to place randomly in bottom area
+                     let px, py;
+                     let safe = false;
+                     let attempts = 0;
+                     while(!safe && attempts < 50) {
+                         px = x + 30 + Math.random() * (w - 80);
+                         py = y + 120 + Math.random() * (h - 150);
+                         // Simple check to avoid Stage/GC (approximated by Y coord mostly)
+                         // GC ends at y+110 roughly. 
+                         if (py > y + 110) safe = true;
+                         attempts++;
+                     }
+
+                     this.venueLayout.props.push({
+                         type: prop.label,
+                         color: prop.color,
+                         textColor: prop.text,
+                         x: px, y: py, w: 25, h: 15
+                     });
+                });
+
+                // Exits
+                this.venueLayout.exits = [];
+                this.venueLayout.exits.push({ x: x - 5, y: y + h/2, w: 5, h: 20 });
+                this.venueLayout.exits.push({ x: x + w, y: y + h/2, w: 5, h: 20 });
+                this.venueLayout.exits.push({ x: x + 20, y: y - 5, w: 20, h: 5 });
+                this.venueLayout.exits.push({ x: x + w - 40, y: y - 5, w: 20, h: 5 });
+            },
+
+            playIntro() {
+                setTimeout(() => {
+                    this.elements.introText.classList.remove('opacity-0', 'translate-y-4');
+                }, 500);
+
+                setTimeout(() => {
+                    this.elements.introText.classList.add('fade-out');
+                }, 3000);
+
+                setTimeout(() => {
+                    this.elements.introOverlay.classList.add('fade-out');
+                    if (this.data.queueCount > 0 || this.data.insideStdCount > 0) {
+                        this.updateStats();
+                    } else {
+                        this.data.queueCount = 100;
+                        this.data.insideStdCount = 100;
+                        this.data.insideGoldCount = 20;
+                        this.updateStats();
+                    }
+                }, 4000);
+
+                setTimeout(() => {
+                    this.elements.statsPanel.classList.remove('translate-y-full');
+                    this.elements.uiSearch.classList.remove('opacity-0');
+                    this.processEntry(5);
+                }, 5500);
+
+                setTimeout(() => {
+                    this.elements.statusBadge.classList.remove('opacity-0', 'translate-y-[-20px]');
+                }, 6500);
+            },
+
+            addQueue(count, updateData = true) {
+                if(updateData) {
+                    this.data.queueCount += count;
+                    this.updateStats();
+                }
+
+                for(let i=0; i<count; i++) {
+                    const laneIdx = Math.floor(Math.random() * CONFIG.turnstileCount);
+                    const t = this.turnstiles[laneIdx];
+                    const isGoldLane = (laneIdx === 0); // Lane 0 is Gold
+                    
+                    const p = new Person('queue', isGoldLane ? 'gold' : 'std');
+                    p.x = t.x;
+                    p.y = this.canvas.height + 50; 
+                    p.laneIndex = laneIdx;
+                    
+                    const pos = this.getQueuePosition(laneIdx, this.people.filter(per => per.type === 'queue' && per.laneIndex === laneIdx).length);
+                    p.targetX = pos.x;
+                    p.targetY = pos.y;
+
+                    this.people.push(p);
+                }
+            },
+
+            addInside(count, tier = 'std', updateData = true) {
+                if(updateData) {
+                    if(tier === 'gold') this.data.insideGoldCount += count;
+                    else this.data.insideStdCount += count;
+                    this.updateStats();
+                }
+                
+                for(let i=0; i<count; i++) {
+                    const p = new Person('inside', tier);
+                    const isGold = (tier === 'gold');
+
+                    if(isGold) {
+                        const gc = this.venueLayout.goldCircle;
+                        p.x = gc.x + Math.random() * gc.w;
+                        p.y = gc.y + Math.random() * gc.h;
+                        // Keep within bounds
+                        if(this.venueLayout.stage && p.checkCollision(p.x, p.y, this.venueLayout.stage)) {
+                             p.y += 40; 
+                        }
+                    } else {
+                        p.x = this.mapBounds.x + Math.random() * this.mapBounds.w;
+                        p.y = this.mapBounds.y + 120 + Math.random() * (this.mapBounds.h - 120);
+                    }
+                    this.people.push(p);
+                }
+            },
+            
+            getQueuePosition(laneIdx, personIndexInLane) {
+                const t = this.turnstiles[laneIdx];
+                const spacing = 3; 
+                const dist = personIndexInLane * spacing;
+                
+                const bounds = this.mapBounds;
+                const canvasW = this.canvas.width;
+                const sideChannelX = laneIdx < 2 ? 15 : canvasW - 15; 
+                const isLeft = laneIdx < 2;
+                const dir = isLeft ? -1 : 1;
+                const zigzagX = (Math.random() * 6 - 3);
+                
+                const limit1 = 100;
+                if(dist < limit1) {
+                     const row = Math.floor(dist / 6);
+                     const offset = (row % 2 === 0) ? -5 : 5;
+                     return { x: t.x + offset + zigzagX, y: t.y + 20 + dist };
+                }
+                
+                const dist2 = dist - limit1;
+                const limit2 = isLeft ? t.x - 30 : (canvasW - t.x) - 30; 
+                const cornerY = t.y + 20 + limit1;
+                
+                if (dist2 < limit2) {
+                     return { x: t.x + (dir * dist2) + zigzagX, y: cornerY + (Math.random()*4-2) };
+                }
+                
+                const dist3 = dist2 - limit2;
+                const sideX = isLeft ? 30 + (laneIdx*10) : canvasW - 30 - ((3-laneIdx)*10);
+                const limit3 = cornerY - (bounds.y - 20); 
+                
+                if (dist3 < limit3) {
+                    return { x: sideX + zigzagX, y: cornerY - dist3 };
+                }
+                
+                const dist4 = dist3 - limit3;
+                const topY = bounds.y - 20 - (laneIdx % 2 * 10);
+                return { x: sideX + (-dir * dist4) + zigzagX, y: topY + zigzagX };
+            },
+
+            processEntry(count) {
+                let moved = 0;
+                const queuePeople = this.people.filter(p => p.type === 'queue' && p.state === 'waiting');
+                
+                for (let p of queuePeople) {
+                    if (moved >= count) break;
+                    p.state = 'entering';
+                    this.data.queueCount--;
+                    if(p.tier === 'gold') this.data.insideGoldCount++;
+                    else this.data.insideStdCount++;
+                    moved++;
+                }
+                
+                if (moved > 0) {
+                    this.recalculateQueuePositions();
+                    this.updateStats();
+                }
+            },
+
+            recalculateQueuePositions() {
+                for(let i=0; i<CONFIG.turnstileCount; i++) {
+                    const lanePeople = this.people
+                        .filter(p => p.type === 'queue' && p.laneIndex === i && p.state === 'waiting');
+                    
+                    lanePeople.forEach((p, index) => {
+                        const pos = this.getQueuePosition(i, index);
+                        p.targetX = pos.x;
+                        p.targetY = pos.y;
+                    });
+                }
+            },
+
+            updateStats() {
+                this.saveState();
+                this.syncVisualsToData();
+                
+                this.elements.statQueue.innerText = this.data.queueCount;
+                this.elements.statInsideStd.innerText = this.data.insideStdCount;
+                this.elements.statInsideGold.innerText = this.data.insideGoldCount;
+                this.elements.capacityDisplay.innerText = this.data.capacity;
+                
+                this.elements.adminQueueInput.value = this.data.queueCount;
+                this.elements.adminInsideStdInput.value = this.data.insideStdCount;
+                this.elements.adminInsideGoldInput.value = this.data.insideGoldCount;
+                
+                const totalLanes = CONFIG.turnstileCount;
+                const peoplePerLane = this.data.queueCount / totalLanes;
+                const mins = Math.ceil((peoplePerLane * 3) / 60); 
+                this.elements.waitTime.innerText = mins;
+
+                const totalInside = this.data.insideStdCount + this.data.insideGoldCount;
+                const percent = totalInside / this.data.capacity;
+                const badge = this.elements.statusBadge;
+                const badgeText = document.getElementById('status-text');
+                const badgeDot = badge.querySelector('span');
+
+                if (percent >= 1) {
+                    badge.className = "glass-panel-floating px-4 py-2 rounded-full flex items-center gap-2 shadow-sm bg-red-100 border-red-300 alert-glow pointer-events-auto";
+                    badgeText.innerText = "OVER CROWDING";
+                    badgeText.className = "font-bold text-sm tracking-wide text-red-800";
+                    badgeDot.className = "w-3 h-3 rounded-full bg-red-600 animate-ping";
+                } else if (percent > 0.9) {
+                    badge.className = "glass-panel-floating px-4 py-2 rounded-full flex items-center gap-2 shadow-sm bg-orange-100 border-orange-300 pointer-events-auto";
+                    badgeText.innerText = "CAPACITY WARNING";
+                    badgeText.className = "font-bold text-sm tracking-wide text-orange-800";
+                    badgeDot.className = "w-3 h-3 rounded-full bg-orange-500 animate-pulse";
+                } else {
+                    badge.className = "glass-panel-floating px-4 py-2 rounded-full flex items-center gap-2 shadow-sm pointer-events-auto";
+                    badgeText.innerText = "AFFLUSSO REGOLARE";
+                    badgeText.className = "font-bold text-sm tracking-wide text-green-800";
+                    badgeDot.className = "w-3 h-3 rounded-full bg-green-500 animate-pulse";
+                }
+            },
+
+            syncVisualsToData() {
+                // Sync Queue
+                const currentQueue = this.people.filter(p => p.type === 'queue' && (p.state === 'waiting' || p.state === 'entering')).length;
+                const targetQueue = Math.min(this.data.queueCount, CONFIG.visualLimit); 
+                const queueDiff = targetQueue - currentQueue;
+
+                if (queueDiff > 0) this.addQueue(queueDiff, false);
+                else if (queueDiff < 0) {
+                    const toRemove = Math.abs(queueDiff);
+                    const queuePeople = this.people.filter(p => p.type === 'queue' && p.state === 'waiting');
+                    const idsToRemove = queuePeople.slice(-toRemove).map(p => p.id);
+                    this.people = this.people.filter(p => !idsToRemove.includes(p.id));
+                }
+
+                // Sync Std Inside
+                const currentStd = this.people.filter(p => p.type === 'inside' && p.tier === 'std').length;
+                const targetStd = Math.min(this.data.insideStdCount, CONFIG.visualLimit / 2); // Cap split
+                const stdDiff = targetStd - currentStd;
+                
+                if (stdDiff > 0) this.addInside(stdDiff, 'std', false);
+                else if (stdDiff < 0) {
+                    const toRemove = Math.abs(stdDiff);
+                    const stdPeople = this.people.filter(p => p.type === 'inside' && p.tier === 'std');
+                    const idsToRemove = stdPeople.slice(0, toRemove).map(p => p.id);
+                    this.people = this.people.filter(p => !idsToRemove.includes(p.id));
+                }
+
+                // Sync Gold Inside
+                const currentGold = this.people.filter(p => p.type === 'inside' && p.tier === 'gold').length;
+                const targetGold = Math.min(this.data.insideGoldCount, CONFIG.visualLimit / 2);
+                const goldDiff = targetGold - currentGold;
+
+                if (goldDiff > 0) this.addInside(goldDiff, 'gold', false);
+                else if (goldDiff < 0) {
+                    const toRemove = Math.abs(goldDiff);
+                    const goldPeople = this.people.filter(p => p.type === 'inside' && p.tier === 'gold');
+                    const idsToRemove = goldPeople.slice(0, toRemove).map(p => p.id);
+                    this.people = this.people.filter(p => !idsToRemove.includes(p.id));
+                }
+                
+                if(queueDiff !== 0) this.recalculateQueuePositions();
+            },
+
+            updateFromInput(type, value) {
+                const val = parseInt(value);
+                if(isNaN(val) || val < 0) return;
+                if(type === 'queue') this.data.queueCount = val;
+                else if(type === 'std') this.data.insideStdCount = val;
+                else if(type === 'gold') this.data.insideGoldCount = val;
+                this.updateStats();
+            },
+
+            adjustCount(type, amount) {
+                if(type === 'queue') this.data.queueCount = Math.max(0, this.data.queueCount + amount);
+                else if(type === 'std') this.data.insideStdCount = Math.max(0, this.data.insideStdCount + amount);
+                else if(type === 'gold') this.data.insideGoldCount = Math.max(0, this.data.insideGoldCount + amount);
+                this.updateStats();
+            },
+
+            updateTime() {
+                const now = new Date();
+                this.elements.lastUpdate.innerText = now.toLocaleTimeString();
+            },
+
+            loop() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.drawMap();
+                this.people.forEach(p => {
+                    p.update(this.mapBounds, this.turnstiles, this.venueLayout);
+                    p.draw(this.ctx);
+                });
+                requestAnimationFrame(() => this.loop());
+            },
+
+            drawMap() {
+                const { x, y, w, h } = this.mapBounds;
+
+                // Shadow
+                this.ctx.fillStyle = 'rgba(0,0,0,0.05)';
+                this.ctx.fillRect(x+4, y+4, w, h);
+
+                // Area Background
+                this.ctx.fillStyle = CONFIG.colors.area;
+                this.ctx.fillRect(x, y, w, h);
+
+                // Internal Layout (Gold Circle)
+                if(this.venueLayout.goldCircle) {
+                    this.ctx.fillStyle = CONFIG.colors.areaGold;
+                    const gc = this.venueLayout.goldCircle;
+                    this.ctx.fillRect(gc.x, gc.y, gc.w, gc.h);
+                    
+                    // GC Border
+                    this.ctx.strokeStyle = '#d4af37';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeRect(gc.x, gc.y, gc.w, gc.h);
+                }
+
+                // Random Props (Inside) - Specific Colors
+                this.venueLayout.props.forEach(p => {
+                    this.ctx.fillStyle = p.color || '#b0c4b9';
+                    this.ctx.fillRect(p.x, p.y, p.w, p.h);
+                    
+                    this.ctx.fillStyle = p.textColor || '#555';
+                    this.ctx.font = 'bold 8px Lato';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(p.type, p.x + p.w/2, p.y + 11);
+                });
+
+                // Stage
+                if(this.venueLayout.stage) {
+                    const st = this.venueLayout.stage;
+                    this.ctx.fillStyle = CONFIG.colors.stage;
+                    this.ctx.fillRect(st.x, st.y, st.w, st.h);
+                    this.ctx.fillStyle = '#888';
+                    this.ctx.font = 'bold 12px Lato';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText("PALCO", st.x + st.w/2, st.y + st.h/2 + 4);
+                }
+
+                // Outline
+                this.ctx.lineWidth = 3;
+                this.ctx.strokeStyle = CONFIG.colors.outline;
+                this.ctx.strokeRect(x, y, w, h);
+                
+                // Exits (Perimeter)
+                this.venueLayout.exits.forEach(ex => {
+                     this.ctx.fillStyle = '#10b981'; // Green
+                     this.ctx.fillRect(ex.x, ex.y, ex.w, ex.h);
+                });
+
+                // Turnstiles
+                this.turnstiles.forEach((t, idx) => {
+                    const isActive = this.people.some(p => p.state === 'entering' && p.laneIndex === idx);
+                    
+                    // Base
+                    this.ctx.fillStyle = t.isGold ? CONFIG.colors.personGold : CONFIG.colors.turnstile;
+                    this.ctx.fillRect(t.x - 14, t.y - 8, 4, 12);
+                    this.ctx.fillRect(t.x + 10, t.y - 8, 4, 12);
+                    
+                    // Swinging Doors
+                    this.ctx.save();
+                    this.ctx.translate(t.x, t.y - 2);
+                    
+                    if(isActive) {
+                        this.ctx.strokeStyle = '#00ffcc'; // Glow
+                        this.ctx.shadowBlur = 5;
+                        this.ctx.shadowColor = '#00ffcc';
+                        
+                        // Doors Open (angled)
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(-12, 0);
+                        this.ctx.lineTo(-12, -10); // Swing up/out
+                        this.ctx.stroke();
+                        
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(12, 0);
+                        this.ctx.lineTo(12, -10); 
+                        this.ctx.stroke();
+
+                    } else {
+                        this.ctx.strokeStyle = t.isGold ? '#b8860b' : '#444';
+                        this.ctx.shadowBlur = 0;
+                        
+                        // Doors Closed (horizontal)
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(-12, 0);
+                        this.ctx.lineTo(-2, 0);
+                        this.ctx.stroke();
+                        
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(12, 0);
+                        this.ctx.lineTo(2, 0);
+                        this.ctx.stroke();
+                    }
+                    this.ctx.restore();
+                });
+            },
+
+            promptAdmin() { this.elements.adminDialog.showModal(); },
+            setRole(role) {
+                this.data.isAdmin = (role === 'admin');
+                if (role === 'admin') {
+                    this.elements.currentRoleLabel.innerText = "Admin";
+                } else {
+                    this.elements.currentRoleLabel.innerText = "Utente";
+                    this.closeAdminPanel();
+                }
+            },
+            openAdminPanel() {
+                this.elements.adminPanel.classList.remove('hidden');
+                setTimeout(() => { this.elements.adminPanel.classList.remove('translate-y-[150%]'); }, 10);
+            },
+            closeAdminPanel() {
+                this.elements.adminPanel.classList.add('translate-y-[150%]');
+                setTimeout(() => { this.elements.adminPanel.classList.add('hidden'); }, 300);
+            },
+            closeAdmin() { this.closeAdminPanel(); },
+            resetDemo() {
+                this.people = [];
+                this.data.queueCount = 0;
+                this.data.insideStdCount = 0;
+                this.data.insideGoldCount = 0;
+                this.saveState();
+                this.updateStats();
+                this.addQueue(10);
+            },
+            saveState() {
+                localStorage.setItem('lineapp_data', JSON.stringify({
+                    queueCount: this.data.queueCount,
+                    insideStdCount: this.data.insideStdCount,
+                    insideGoldCount: this.data.insideGoldCount
+                }));
+            },
+            loadState() {
+                const stored = localStorage.getItem('lineapp_data');
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    this.data.queueCount = parsed.queueCount || 0;
+                    this.data.insideStdCount = parsed.insideStdCount || 0;
+                    this.data.insideGoldCount = parsed.insideGoldCount || 0;
+                }
+            },
+            toggleAutoEntry() {
+                const btn = document.getElementById('btn-auto-entry');
+                if (this.autoEntryInterval) {
+                    clearInterval(this.autoEntryInterval);
+                    this.autoEntryInterval = null;
+                    btn.innerText = "Auto";
+                    btn.classList.remove('bg-blue-200', 'border-blue-400');
+                    btn.classList.add('bg-blue-50', 'border-blue-200');
+                } else {
+                    this.processEntry(1);
+                    this.autoEntryInterval = setInterval(() => {
+                        if(this.data.queueCount > 0) {
+                            this.processEntry(Math.floor(Math.random() * 3) + 1);
+                        } else {
+                            if(Math.random() > 0.7) this.addQueue(Math.floor(Math.random() * 5) + 1);
+                        }
+                    }, 2000);
+                    btn.innerText = "Live";
+                    btn.classList.remove('bg-blue-50', 'border-blue-200');
+                    btn.classList.add('bg-blue-200', 'border-blue-400');
+                }
+            },
+            setupSearch() {
+                const inp = this.elements.searchInput;
+                const results = this.elements.searchResults;
+                
+                inp.addEventListener('input', (e) => {
+                    const val = e.target.value.toLowerCase();
+                    if(val.length < 1) { results.classList.add('hidden'); return; }
+                    const matches = VENUES.filter(v => v.name.toLowerCase().includes(val) || v.city.toLowerCase().includes(val));
+                    if(matches.length > 0) {
+                        results.innerHTML = matches.map(v => `
+                            <li class="px-4 py-2 hover:bg-gray-50 cursor-pointer flex justify-between items-center group" onclick="app.selectVenue('${v.name}')">
+                                <div><div class="font-bold text-sm text-gray-800">${v.name}</div><div class="text-xs text-gray-500">${v.city}</div></div>
+                                <span class="text-xs font-mono bg-gray-100 px-2 py-1 rounded group-hover:bg-white">${v.capacity.toLocaleString()}</span>
+                            </li>
+                        `).join('');
+                        results.classList.remove('hidden');
+                    } else { results.classList.add('hidden'); }
+                });
+                document.addEventListener('click', (e) => { if(!this.elements.uiSearch.contains(e.target)) results.classList.add('hidden'); });
+            },
+            selectVenue(name) {
+                const venue = VENUES.find(v => v.name === name);
+                if(venue) {
+                    this.elements.searchInput.value = venue.name;
+                    this.elements.venueCapDisplay.innerText = venue.capacity.toLocaleString();
+                    this.elements.venueTypeDisplay.innerText = venue.type;
+                    this.data.capacity = venue.capacity;
+                    this.generateLayout();
+                    this.updateStats();
+                    this.elements.searchResults.classList.add('hidden');
+                }
+            }
+        };
+
+        window.onload = () => app.init();
+
+    </script>
+</body>
+</html>
